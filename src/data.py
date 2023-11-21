@@ -83,15 +83,7 @@ class Data:
             if any(section_name in line for section_name in self.snames):
                 title_style = line.strip("\n").split(" # ")
                 section_lines = lines[
-                    i
-                    + 2 : i
-                    + int(
-                        getattr(
-                            self,
-                            self.slength[self.snames.index(title_style[0].strip())],
-                        )
-                    )
-                    + 2
+                    i + 2 : i + int(getattr(self,self.slength[self.snames.index(title_style[0].strip())],)) + 2
                 ]
                 self.sections.append(
                     Section(
@@ -101,14 +93,7 @@ class Data:
                     )
                 )
                 i = (
-                    i
-                    + int(
-                        getattr(
-                            self,
-                            self.slength[self.snames.index(title_style[0].strip())],
-                        )
-                    )
-                    + 2
+                    i + int(getattr(self,self.slength[self.snames.index(title_style[0].strip())],)) + 2
                 )
 
             # requires custom logic as type labels are non numeric

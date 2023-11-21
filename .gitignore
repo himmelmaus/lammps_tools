@@ -1,6 +1,7 @@
 # Project Specific
 .vscode
 *.data
+*.xyz
 
 # Everything Below this point is boilerplate
 # Byte-compiled / optimized / DLL files
