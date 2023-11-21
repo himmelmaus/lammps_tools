@@ -1,0 +1,1 @@
+Python library for reading and writing lammps data files, currently no functionality beyond this. More advanced utilities/refactoring to come.
