@@ -54,13 +54,14 @@ class Data:
     ]
 
     def __init__(self):
-        self.hvars =  list(np.array(self.hkeywords).T[0])
+        self.hvars = list(np.array(self.hkeywords).T[0])
         self.hnames = list(np.array(self.hkeywords).T[1])
-        
+
         self.snames = list(np.array(self.skeywords).T[0])
         self.slength = list(np.array(self.skeywords).T[1])
         self.sections = []
-        
+        self.atom_type_labels = None
+
     @classmethod
     def read_file(cls, filename):
         instance = cls()
@@ -70,29 +71,61 @@ class Data:
             return instance
 
     def process_file(self, lines):
-        
         for i, line in enumerate(lines):
             if any(header_name in line for header_name in self.hnames):
                 self.process_header(line.strip().split(" "))
                 continue
-            if any(section_name in line for section_name in self.snames):
+            if any(section_name in line for section_name in self.snames) or "Atom Type Labels" in line:
                 break
-                
+
         while i < len(lines):
             line = lines[i]
             if any(section_name in line for section_name in self.snames):
                 title_style = line.strip("\n").split(" # ")
-                section_lines = lines[i+2:i+int(getattr(self, self.slength[self.snames.index(title_style[0].strip())]))+2]
-                self.sections.append(Section(section_lines, title_style[0], style = None if len(title_style) == 1 else title_style[1]))
-                i = i+int(getattr(self, self.slength[self.snames.index(title_style[0].strip())]))+2
+                section_lines = lines[
+                    i
+                    + 2 : i
+                    + int(
+                        getattr(
+                            self,
+                            self.slength[self.snames.index(title_style[0].strip())],
+                        )
+                    )
+                    + 2
+                ]
+                self.sections.append(
+                    Section(
+                        section_lines,
+                        title_style[0],
+                        style=None if len(title_style) == 1 else title_style[1],
+                    )
+                )
+                i = (
+                    i
+                    + int(
+                        getattr(
+                            self,
+                            self.slength[self.snames.index(title_style[0].strip())],
+                        )
+                    )
+                    + 2
+                )
+
+            # requires custom logic as type labels are non numeric
+            if "Atom Type Labels" in line:
+                section_lines = lines[i + 2 : i + int(getattr(self, "atom_types")) + 2]
+                _, self.atom_type_labels = np.array(
+                    list(map(lambda x: x.strip("\n").split(" "), section_lines))
+                ).T
+                
+                i = i + int(getattr(self, "atom_types")) + 2
+
             else:
                 i = i + 1
-            
+
         return self
-        
 
     def process_header(self, tokens: list[str]):
-
         # Most header values, with a single value and a label with a space in it
         if len(tokens) <= 3:
             setattr(
@@ -100,8 +133,7 @@ class Data:
                 self.hvars[self.hnames.index(" ".join(tokens[1:]))],
                 float(tokens[0]),
             )
-            
-            
+
         # coord lo/hi values
         elif len(tokens) == 4:
             setattr(
@@ -117,21 +149,40 @@ class Data:
                 self.hvars[self.hnames.index(" ".join(tokens[3:]))],
                 np.array(list(map(float, tokens[:3]))),
             )
-            
+
     def write_file(self, file="out.data"):
-        outlines = ["LAMMPS Data File written via lammps_tools, Elspeth Smith, Ruhr Universitaet Bochum\n\n"]
+        outlines = [
+            "LAMMPS Data File written via lammps_tools, Elspeth Smith, Ruhr Universitaet Bochum\n\n"
+        ]
         for i, field in enumerate(self.hvars):
             if getattr(self, field, None) is not None:
                 outlines.append(f"{num_str(getattr(self, field))} {self.hnames[i]}\n")
         outlines.append("\n\n")
         
+        if getattr(self, "atom_type_labels", None) is not None:
+            lines = list(map(lambda x: f"{x[0]+1} {x[1]}\n", enumerate(self.atom_type_labels)))
+            outlines.append("Atom Type Labels\n\n")
+            outlines.extend(lines)
+            outlines.append("\n")
+
         for section in self.sections:
             outlines.extend(section.print_lines())
             outlines.append("\n")
-            
+
         with open(file, "w") as outfile:
             outfile.writelines(outlines)
-        return 
-            
-            
-        
+        return
+
+    def write_xyz(self, file="out.xyz"):
+        atoms = [section for section in self.sections if section.title=="Atoms"][0]
+        outlines = [f"{len(atoms.lines)}\n"]
+        outlines.extend(
+            [
+                f"{self.atom_type_labels[atom.type_id-1]} {' '.join(map(str, atom.coords))}\n"
+                for atom in atoms.lines
+            ]
+        )
+
+        with open(file, "w") as outfile:
+            outfile.writelines(outlines)
+        return
