@@ -1,6 +1,6 @@
 import numpy as np
-from atom import Atom
-from helpers import num_str
+from .atom import Atom
+from .helpers import num_str
 
 class Section:
     
@@ -14,7 +14,7 @@ class Section:
             # but I'm not sure how useful that'd be. May also just scrap Atom, but maintaining an inbuilt functionality
             # for changing atom style and such would be handy.
             self.lines = np.array(
-                list(map(lambda x: map(float, x.strip().split(" ")), lines))
+                list(map(lambda x: list(map(float, x.strip().split(" "))), lines))
             )
 
         else:
@@ -37,3 +37,8 @@ class Section:
             outlines.extend(list(map(str, self.lines)))
 
         return outlines
+    
+    @property
+    def section_id(self):
+        # Converts to snake case
+        return self.title.strip().lower().replace(" ", "_")

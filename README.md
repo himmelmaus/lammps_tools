@@ -4,4 +4,4 @@ Current Limitations:
 - Assumes there is a trailing space after section titles (e.g. "Atoms # full") and after 
 - Doesn't store/specify units
 - Discards periodic image information
-- TODO: make sections directly accessible by name
+- ~~TODO: make sections directly accessible by name~~

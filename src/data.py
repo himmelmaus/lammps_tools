@@ -1,6 +1,8 @@
+from typing import Any
 import numpy as np
-from section import Section
-from helpers import num_str
+from .section import Section
+from .helpers import num_str
+import re
 
 
 class Data:
@@ -61,6 +63,32 @@ class Data:
         self.slength = list(np.array(self.skeywords).T[1])
         self.sections = []
         self.atom_type_labels = None
+        
+    def __getattr__(self, item):
+        """
+        Implementing custom setter/getter logic to allow for sections to be accessible by name,
+        while still stored in an array. I'm not sure this is the best way to do it but will have
+        a ponder. These need to be prepended with section_ so as to avoid confusion between e.g.
+        the Atoms section and the number of atoms header value.
+        """
+        try:
+            section_id = re.match(r"section_(.+)", item).group(1)
+            return self.sections[self.section_ids.index(section_id)]
+        except AttributeError:
+            return super(Data, self).__getattribute__(item)
+        
+    def __setattr__(self, item, value):
+        section_id = re.match(r"section_(.+)", item)
+        if section_id:
+            section_id = section_id.group(1)
+            self.sections[self.section_ids.index(section_id)] = value
+        else:
+            return super(Data, self).__setattr__(item, value)
+        
+        
+    @property
+    def section_ids(self):
+        return list(map(lambda x: x.section_id, self.sections))
 
     @classmethod
     def read_file(cls, filename):
