@@ -1,6 +1,8 @@
 import numpy as np
+from collections.abc import Iterable
+
 from .atom import Atom
-from .helpers import num_str
+from .helpers import num_str, snake_case
 
 class Section:
     
@@ -13,9 +15,16 @@ class Section:
             # Might come back to this and make each entry its own class instance, and make Atom inherit from this
             # but I'm not sure how useful that'd be. May also just scrap Atom, but maintaining an inbuilt functionality
             # for changing atom style and such would be handy.
-            self.lines = np.array(
-                list(map(lambda x: list(map(float, x.strip().split(" "))), lines))
-            )
+            if isinstance(lines, str):
+                self.lines = np.array(
+                    list(map(lambda x: list(map(float, x.strip().split(" "))), lines))
+                )
+            elif isinstance(lines, Iterable):
+                self.lines = np.array(
+                    lines
+                )
+            else:
+                raise ValueError("Section.lines must be either a string or an iterable.")
 
         else:
             self.lines = np.array(
@@ -41,4 +50,4 @@ class Section:
     @property
     def section_id(self):
         # Converts to snake case
-        return self.title.strip().lower().replace(" ", "_")
+        return snake_case(self.title)

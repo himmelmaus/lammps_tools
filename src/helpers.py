@@ -7,3 +7,6 @@ def num_str(num):
     # also I hate weak typing
     except TypeError:
         return " ".join(map(num_str, num))
+    
+def snake_case(string):
+    return string.lower().replace(" ", "_")

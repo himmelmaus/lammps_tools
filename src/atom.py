@@ -1,5 +1,5 @@
 import numpy as np
-
+from collections.abc import Iterable
 
 class Atom:
     
@@ -32,7 +32,12 @@ class Atom:
         
         # Assumes we aren't caring about image flags
         
-        tokens = line.strip().split()
+        if isinstance(line, str):
+            tokens = line.strip().split()
+        elif isinstance(line, Iterable):
+            tokens = np.copy(line)
+        else:
+            raise ValueError("Atom.line must be either a string or an iterable.")
 
         if atom_style == "atomic":
             

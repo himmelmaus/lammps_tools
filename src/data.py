@@ -1,7 +1,7 @@
 from typing import Any
 import numpy as np
 from .section import Section
-from .helpers import num_str
+from .helpers import num_str, snake_case
 import re
 
 
@@ -162,6 +162,21 @@ class Data:
                 self.hvars[self.hnames.index(" ".join(tokens[3:]))],
                 np.array(list(map(float, tokens[:3]))),
             )
+            
+    def add_section(self, lines, title, style=None):
+        if title in self.snames and snake_case(title) not in self.section_ids:
+            self.sections.append(
+                Section(
+                    lines,
+                    title,
+                    style=style
+                )
+            )
+            return self.sections[-1]
+        else:
+            if title in self.snames:
+                raise NameError(f"Section {title} already exists")
+            raise NameError(f"{title} is not a valid section title")
 
     def write_file(self, file="out.data"):
         outlines = [
