@@ -63,6 +63,7 @@ class Data:
         self.slength = list(np.array(self.skeywords).T[1])
         self.sections = []
         self.atom_type_labels = None
+        self.units = None
         
     def __getattr__(self, item):
         """
@@ -103,6 +104,8 @@ class Data:
             if any(header_name in line for header_name in self.hnames):
                 self.process_header(line.strip().split(" "))
                 continue
+            if re.search(r"units = (.+)\n", line):
+                self.units = re.search(r"units = (.+)\n", line).group(1)
             if any(section_name in line for section_name in self.snames) or "Atom Type Labels" in line:
                 break
 
@@ -180,7 +183,7 @@ class Data:
 
     def write_file(self, file="out.data", sort=True):
         outlines = [
-            "LAMMPS Data File written via lammps_tools, Elspeth Smith, Ruhr Universitaet Bochum\n\n"
+            f"LAMMPS Data File written via lammps_tools, Elspeth Smith, Ruhr Universitaet Bochum{f', units = {self.units}' if self.units else ''}\n\n"
         ]
         for i, field in enumerate(self.hvars):
             if getattr(self, field, None) is not None:

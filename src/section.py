@@ -49,7 +49,7 @@ class Section:
         else:
             if sort:
                 lines = sorted(self.lines, key=lambda x: x.atom_id)
-            outlines.extend(list(map(str, self.lines)))
+            outlines.extend(list(map(str, lines)))
 
         return outlines
     
