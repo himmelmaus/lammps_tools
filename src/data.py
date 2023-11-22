@@ -178,7 +178,7 @@ class Data:
                 raise NameError(f"Section {title} already exists")
             raise NameError(f"{title} is not a valid section title")
 
-    def write_file(self, file="out.data"):
+    def write_file(self, file="out.data", sort=True):
         outlines = [
             "LAMMPS Data File written via lammps_tools, Elspeth Smith, Ruhr Universitaet Bochum\n\n"
         ]
@@ -194,7 +194,7 @@ class Data:
             outlines.append("\n")
 
         for section in self.sections:
-            outlines.extend(section.print_lines())
+            outlines.extend(section.print_lines(sort=sort))
             outlines.append("\n")
 
         with open(file, "w") as outfile:
