@@ -10,3 +10,7 @@ def num_str(num):
     
 def snake_case(string):
     return string.lower().replace(" ", "_")
+
+def readlines(file_obj, n):
+    lines = [file_obj.readline() for _ in range(n)]
+    return lines, file_obj

@@ -5,12 +5,13 @@ class Atom:
     
     
     def __init__(
-        self, atom_id, type_id, x, y, z, *, q=0, molecule_id=None, atom_style=None
+        self, atom_id, type_id, x, y, z, *, q=0, molecule_id=None, atom_style=None, image_flags=[0, 0,0 ]
     ):
         self.atom_id = atom_id
         self.type_id = type_id
         self.coords = [x, y, z]
         self.q = q
+        self.image_flags = image_flags
         if molecule_id is not None:
             self.molecule_id = molecule_id
         if atom_style is not None:
@@ -21,11 +22,36 @@ class Atom:
     def __str__(self):
         if self.__atom_style == "atomic":
             # atom-ID atom-type x y z
-            return f"{self.atom_id} {self.type_id} {' '.join(map(str,self.coords))}\n"
+            return f"{self.atom_id} {self.type_id} {' '.join(map(str,self.coords))} {' '.join(self.image_flags)}\n"
 
         if self.__atom_style == "full":
             # atom-ID molecule-ID atom-type q x y z
-            return f"{self.atom_id} {self.molecule_id} {self.type_id} {self.q} {' '.join(map(str,self.coords))}\n"
+            return f"{self.atom_id} {self.molecule_id} {self.type_id} {self.q} {' '.join(map(str,self.coords))} {' '.join(self.image_flags)}\n"
+        
+    def update_position(self, line):
+        
+        if isinstance(line, str):
+            tokens = line.strip().split()
+        elif isinstance(line, Iterable):
+            tokens = np.copy(line)
+        else:
+            raise ValueError("Atom.line must be either a string or an iterable.")
+        
+        if True or self.__atom_style == "atomic":
+            assert len(tokens) in [5, 8]
+            if len(tokens) == 8:
+                images = tokens[-3:]
+                tokens = tokens[:-3]
+            elif len(tokens) == 5:
+                images = [0,0,0]
+            
+            assert tokens[0] == self.atom_id
+            
+            self.coords = list(map(float, tokens[4:]))
+            self.image_flags = images
+            
+        return self
+            
 
     @classmethod
     def parse_line(cls, line, atom_style="atomic"):
@@ -43,17 +69,23 @@ class Atom:
             
             assert len(tokens) in [5, 8]
             if len(tokens) == 8:
+                images = tokens[-3:]
                 tokens = tokens[:-3]
+            elif len(tokens) == 5:
+                images = [0,0,0]
+                
             return cls(
                 int(tokens[0]),
                 int(tokens[1]),
                 *map(float, tokens[2:]),
                 atom_style=atom_style,
+                image_flags = images
             )
 
         if atom_style == "full":
             assert len(tokens) in [7, 10]
             if len(tokens) == 10:
+                images = tokens[-3:]
                 tokens = tokens[:-3]
             return cls(
                 int(tokens[0]),
@@ -62,4 +94,5 @@ class Atom:
                 q=float(tokens[3]),
                 molecule_id=int(tokens[1]),
                 atom_style=atom_style,
+                image_flags = images
             )
