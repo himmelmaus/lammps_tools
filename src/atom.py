@@ -9,7 +9,7 @@ class Atom:
     ):
         self.atom_id = atom_id
         self.type_id = type_id
-        self.coords = [x, y, z]
+        self.coords = np.array([x, y, z])
         self.q = q
         self.image_flags = image_flags
         if molecule_id is not None:
@@ -45,9 +45,8 @@ class Atom:
             elif len(tokens) == 5:
                 images = [0,0,0]
             
-            assert tokens[0] == self.atom_id
-            
-            self.coords = list(map(float, tokens[4:]))
+            assert int(tokens[0]) == self.atom_id
+            self.coords = np.array(list(map(float, tokens[2:])))
             self.image_flags = images
             
         return self

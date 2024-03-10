@@ -12,5 +12,5 @@ def snake_case(string):
     return string.lower().replace(" ", "_")
 
 def readlines(file_obj, n):
-    lines = [file_obj.readline() for _ in range(n)]
+    lines = [file_obj.readline() for _ in range(int(n))]
     return lines, file_obj

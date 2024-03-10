@@ -2,6 +2,11 @@
 .vscode
 *.data
 *.xyz
+*.png
+**/testing/*
+*.lammps
+*.txt
+*.out
 
 # Everything Below this point is boilerplate
 # Byte-compiled / optimized / DLL files
