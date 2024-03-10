@@ -314,8 +314,8 @@ class BinnedDiffusionAnalysis(Analysis):
         if self.bins is None:
             
             # Shrink the bin size slightly to accommodate equally sized bins
-            self.nbins = int(np.ceil(np.abs(dump.zbounds[1] - dump.zbounds[0])/self.bin_height))
-            self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/self.nbins
+            self.nbins = int(np.ceil(np.abs(dump.zbounds[1] - dump.zbounds[0])/self.bin_height))+1
+            # self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/self.nbins
 
             self.bins = np.linspace(dump.zbounds[0], dump.zbounds[1], self.nbins)
 
@@ -377,8 +377,8 @@ class BinnedDiffusionAnalysis(Analysis):
         zhi = max(dump.zbounds)
         zs = np.copy(oxygen_coords[0,:, 2])
 
-        zs[zs >= zhi] = zs[zs >= zhi]%zhi + zlo
-        zs[zs < zlo] = zs[zs < zlo] + (1+np.floor(np.abs(zs[zs<zlo]/(zhi-zlo))))*(zhi-zlo)
+        zs[zs > zhi] = zs[zs > zhi]%zhi + zlo
+        zs[zs < zlo] = zs[zs < zlo] + (1+np.floor(np.abs(zs[zs<zlo])/(zhi-zlo)))*(zhi-zlo)
 
         oxygen_bin_indices = np.floor(zs/self.bin_height).astype(int)
 
