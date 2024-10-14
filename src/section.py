@@ -11,11 +11,11 @@ class Section:
         if style is not None:
             self.style = style.strip()
 
-        if title != "Atoms":
+        if title != "Atoms" and "Atoms" not in title:
             # Might come back to this and make each entry its own class instance, and make Atom inherit from this
             # but I'm not sure how useful that'd be. May also just scrap Atom, but maintaining an inbuilt functionality
             # for changing atom style and such would be handy.
-            if isinstance(lines, Iterable) and isinstance(lines[0], str):
+            if isinstance(lines, Iterable) and len(lines)>0 and isinstance(lines[0], str): # put this back
                 self.lines = np.array(
                     list(map(lambda x: list(map(float, x.strip().split(" "))), lines))
                 )

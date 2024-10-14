@@ -26,7 +26,7 @@ class Atom:
 
         if self.__atom_style == "full":
             # atom-ID molecule-ID atom-type q x y z
-            return f"{self.atom_id} {self.molecule_id} {self.type_id} {self.q} {' '.join(map(str,self.coords))} {' '.join(self.image_flags)}\n"
+            return f"{self.atom_id} {self.molecule_id} {self.type_id} {self.q} {' '.join(map(str,self.coords))} {' '.join(map(str,self.image_flags))}\n"
         
     def update_position(self, line):
         
@@ -86,12 +86,25 @@ class Atom:
             if len(tokens) == 10:
                 images = tokens[-3:]
                 tokens = tokens[:-3]
+                return cls(
+                int(tokens[0]),
+                int(tokens[2]),
+                *map(float, tokens[4:]),
+                q=float(tokens[3]),
+                #TODO FIXME FIX THIS!!!!
+                molecule_id=0,
+                atom_style=atom_style,
+                image_flags = images
+            )
+            # else:
+            #     images = [0,0,0]
             return cls(
                 int(tokens[0]),
                 int(tokens[2]),
                 *map(float, tokens[4:]),
                 q=float(tokens[3]),
-                molecule_id=int(tokens[1]),
+                # TODO FIXME FIX THIS!!!!
+                molecule_id=0,
                 atom_style=atom_style,
-                image_flags = images
+                # image_flags = images
             )

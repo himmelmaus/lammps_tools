@@ -108,8 +108,8 @@ class BinnedAngleAnalysis(Analysis):
         if self.bins is None:
             
             # Shrink the bin size slightly to accommodate equally sized bins
-            self.nbins = int(np.ceil(np.abs(dump.zbounds[1] - dump.zbounds[0])/self.bin_height))
-            self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/self.nbins
+            self.nbins = int(np.ceil(np.abs(dump.zbounds[1] - dump.zbounds[0])/self.bin_height)) + 1
+            self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/(self.nbins-1)
 
             self.bins = np.linspace(dump.zbounds[0], dump.zbounds[1], self.nbins)
 
@@ -136,7 +136,7 @@ class BinnedAngleAnalysis(Analysis):
         
         return
     
-    def finalise_analysis(self, save=True, filename="mean_orientation_binned.png"):
+    def finalise_analysis(self, save=True, filename="mean_orientation_binned"):
 
         mean_orientations = self.cum_bin_angles/self.n_bin_entries
         mean_orientations = np.nan_to_num(mean_orientations, posinf=0, neginf=0)
@@ -149,10 +149,96 @@ class BinnedAngleAnalysis(Analysis):
         else:
             plt.ylabel("Mean angle between molecules and positive z axis (Degrees)")
         
-        plt.savefig(filename)
+        np.savetxt(f"{filename}.txt", (self.bins, mean_orientations_deg))
+        plt.savefig(f"{filename}.png")
         plt.cla()
         plt.clf()
         return
+    
+class CitrateAngleAnalysis(Analysis):
+    
+    """
+    For finding the angle made between citrate molecules and the negative z axis
+    """
+    
+    unit_z = [0,0,1]
+    
+    def __init__(self, bin_height=0.5, fixed_bins=True, wrap_angle=False):
+
+        super(CitrateAngleAnalysis, self).__init__(bin_height=bin_height, fixed_bins=fixed_bins, wrap_angle=wrap_angle)
+        self.wrap_angle = wrap_angle
+
+        if not fixed_bins:
+            raise NotImplementedError("Support for variable bin height has not yet been implemented for this analysis.")
+
+        # Rather than calculating a rolling average or similar, keep track of cumulative sum and number of entries
+        self.cum_bin_angles = None 
+        self.n_bin_entries = None
+
+
+
+    
+    def __call__(self, old_atoms, new_atoms, *, dump):
+
+        if self.bins is None or not self.fixed_bins:
+            self.nbins = int(np.ceil(np.abs(dump.zbounds[1] - dump.zbounds[0])/self.bin_height))
+            self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/self.nbins
+            self.bins = np.linspace(dump.zbounds[0], dump.zbounds[1], self.bin_height)
+
+        if self.mol_atoms is None:
+            self.set_mol_atoms(dump)
+
+        angles = []
+        for atoms in self.mol_atoms.values():
+
+            angles.append(self.get_mol_angle(atoms))
+
+        print(dump.current_step, dump.n_atoms, np.mean(angles), max(angles))
+        return np.mean(angles)
+    
+    def set_mol_atoms(self, dump):
+        self.mol_atoms = {}
+        CC_atoms = [a.atom_id for a in dump.atoms if a.type_id == "CC"]
+        for mol_id, atoms in dump.molecules.items():
+            # Water specific sorting so that the oxygen is always in the first position
+            # this will also break if the analysis is applied to multiple dumps
+            cc_atom_indices = np.where([atom.atom_id in CC_atoms for atom in atoms])
+            # mol_cc_atoms = atoms[cc_atom_indices]
+                
+
+            self.mol_atoms[mol_id] = [atoms[np.max(cc_atom_indices)], atoms[np.min(cc_atom_indices)]]# [sorted(filter(lambda a: a.atom_id in atoms, dump.atoms), key=lambda a: a.atom_id)]
+
+    def get_mol_vector(self, atoms):
+        # H_midpoint = (atoms[2].coords + atoms[1].coords)/2
+        orientation_vector = np.copy(atoms[1].coords - atoms[0].coords)
+        orientation_vector /= np.linalg.norm(orientation_vector) # normalising
+
+        return orientation_vector
+    
+    def get_mol_angle(self, atoms):
+
+        orientation_vector = self.get_mol_vector(atoms)
+
+        # Radians!!!!!
+        angle = np.arccos(np.dot(orientation_vector, self.unit_z))
+
+        if self.wrap_angle:
+            angle = np.pi - angle if angle > np.pi/2 else angle # CAST
+
+        return angle
+    
+    def get_bin_index(self, coords, zbounds):
+
+        if coords[2] >= zbounds[1]:
+            bin_index = int(np.floor((coords[2]%zbounds[1] + zbounds[0])/self.bin_height))
+        elif coords[2] < zbounds[0]:
+            box_height = zbounds[1] - zbounds[0]
+            wrapped_coord = coords[2] + (1 + np.floor(np.abs(coords[2])/box_height))*box_height
+            bin_index = int(np.floor(wrapped_coord/self.bin_height))
+        else:
+            bin_index = int(np.floor(coords[2]/self.bin_height))
+
+        return bin_index
 
 class NaiveDiffusionAnalysis(Analysis):
     
@@ -315,7 +401,7 @@ class BinnedDiffusionAnalysis(Analysis):
             
             # Shrink the bin size slightly to accommodate equally sized bins
             self.nbins = int(np.ceil(np.abs(dump.zbounds[1] - dump.zbounds[0])/self.bin_height))+1
-            # self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/self.nbins
+            self.bin_height = np.abs(dump.zbounds[1] - dump.zbounds[0])/(self.nbins-1)
 
             self.bins = np.linspace(dump.zbounds[0], dump.zbounds[1], self.nbins)
 
@@ -463,18 +549,18 @@ class BinnedDiffusionAnalysis(Analysis):
     
         return bin_index, tau_index, np.sum(squared_disp), squared_disp.shape[0]
         
-    def finalise_analysis(self, save=True, filename="binned_msd_plot.png"):
+    def finalise_analysis(self, save=True, filename="binned_msd"):
 
         # nan_filter = (~(np.isnan(bin_msds)) & ~(np.isinf(bin_msds)) & ())
         
         bin_msds = self.cum_bin_msd/self.cum_bin_entries
         
-        taus = np.arange(self.tau_range, step=self.tau_step)/2
+        taus = np.arange(self.tau_range, step=self.tau_step)    
         
         ms = np.array([])
         cs = np.array([])
         
-        straight_line = lambda x, m, c: m*x + c
+        straight_line = lambda x, m: m*x
         
         for msd in bin_msds:
             
@@ -485,7 +571,7 @@ class BinnedDiffusionAnalysis(Analysis):
             
             if not nan_filter.any():
                 ms = np.append(ms, 0)
-                cs = np.append(cs, 0)
+                # cs = np.append(cs, 0)
                 continue
             
             timesteps = np.array(taus)[nan_filter]
@@ -497,15 +583,19 @@ class BinnedDiffusionAnalysis(Analysis):
             print(popt)
             
             ms = np.append(ms, popt[0])
-            cs = np.append(cs, popt[1])
+            # cs = np.append(cs, popt[1])
             
-        np.savetxt("bin_data.txt", (self.bins, ms))
+        # ms_filter = ms != 0
+        plot_bins = self.bins # [ms_filter]
+        plot_ms = self.bins # [ms_filter]
+        Ds = (plot_ms/4)*1e-5
+        np.savetxt(f"{filename}.txt", (plot_bins, Ds))
 
-        plt.plot(self.bins, ms*1e-5)
+        plt.plot(plot_bins, Ds)
         plt.xlabel("Z Coordinate (Å)")
         plt.ylabel("Diffusion coefficient ($m^2/s^{-1}$)")
         plt.tight_layout()
-        plt.savefig(filename)
+        plt.savefig(f"{filename}.png")
         plt.cla()
         plt.clf()
 
