@@ -346,7 +346,6 @@ class NaiveDiffusionAnalysis(Analysis):
         
         return
     
-
 class BinnedDiffusionAnalysis(Analysis):
     
     oxygens = None
@@ -610,8 +609,145 @@ class BinnedDiffusionAnalysis(Analysis):
             # plt.clf()
         
         
+class TetrahedralAngleAnalysis(Analysis):
+    
+    O_type = "OS"
+    C_types = ["CT"]
+    C_O_cutoff=17
+    
+    def __init__(self, bin_height=0.1, fixed_bins=True, **kwargs):
+        super().__init__(bin_height, fixed_bins, **kwargs)
+        
+        self.O_atoms = None
+        self.O_ids = None
+        self.n_Os = 0
+
+        self.C_atoms = None
+        self.C_ids = None
+        self.n_Cs = 0
+
+        self.initialised = False
+        
+        self.bin_height = bin_height
+
+        self.nbins = int(np.ceil(np.abs(self.C_O_cutoff/self.bin_height)))+1
+        self.bin_height = np.abs(self.C_O_cutoff)/(self.nbins-1)
 
 
+        padding = 20
+        self.cum_q_binned = np.zeros((self.nbins+padding,))
+        self.n_bin_entries  = np.zeros((self.nbins+padding,))
+
+        self.bins = np.linspace(0, self.C_O_cutoff, self.nbins+padding)
+        
+    def __call__(self, old_atoms, new_atoms, *, dump):
+        
+        
+        if not self.initialised:
+            self.O_atoms = np.array(list(filter(lambda a: a.type_id==self.O_type, new_atoms)))
+            self.n_Os = len(self.O_atoms)
+            # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
+            self.O_ids = np.array([o.atom_id for o in self.O_atoms])
+
+            self.C_atoms = np.array(list(filter(lambda a: a.type_id in self.C_types, new_atoms)))
+            self.n_Cs = len(self.C_atoms)
+            # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
+            self.C_ids = np.array([c.atom_id for c in self.C_atoms])
+            self.initialised = True
+
+        
+        C_O_distances = np.zeros((self.n_Os, self.n_Cs))
+
+        for i in range(self.n_Cs):
+            C_coords = self.C_atoms[i].coords
+            for j in range(self.n_Os):
+                C_O_distances[j][i] = np.linalg.norm(C_coords - self.O_atoms[j].coords)
+
+        min_C_O_distances = np.min(C_O_distances, axis=1)
+        C_O_filter = min_C_O_distances <= self.C_O_cutoff
+
+        # distances = np.zeros((self.n_Os, self.n_Os))
+        
+        # for i in range(self.n_Os-1):
+
+        #     # Come back to this in order to optimise the calculation, as
+        #     # it would be good to not calculate the O distances for molecules
+        #     # too far away from the carbons - but it complicates the calculation 
+        #     # if not O_filter[i]:
+        #     #     continue
+
+        #     i_coords = self.O_atoms[i].coords
+        #     for j in range(i+1, self.n_Os):
+
+        #         distances[i][j] = np.linalg.norm(i_coords - self.O_atoms[i].coords)
+        
+        # # symmetrise so distances[i][j] = distances[j][i]
+        # distances += distances.T - np.diag(distances.diagonal())
+        
+        O_coords = np.array([a.coords for a in self.O_atoms])
+
+        for i, central_atom in enumerate(self.O_atoms):
+            
+            # if i == 0:
+            #     # TODO: jank
+            #     continue
+
+            if not C_O_filter[i]:
+                continue
+            
+            # Find 4 nearest neighbours
+            distances = np.linalg.norm(O_coords - central_atom.coords, axis=1)
+            # Doing it this way as the lowest difference will always be 0 for i == j
+            nearest_indices = np.argpartition(distances, 5)[:5]
+            # Remove own atom
+            nearest_indices = nearest_indices[nearest_indices != i]
+            
+            nearest_neighbours = self.O_atoms[nearest_indices]
+            nearest_neighbours_coords = np.array(list(map(lambda x: x.coords, nearest_neighbours)))
+
+            q = self.__get_q(central_atom.coords, nearest_neighbours_coords)
+
+            bin_index = np.floor(min_C_O_distances[i]/self.bin_height).astype(int)
+
+            self.n_bin_entries[bin_index] += 1
+            self.cum_q_binned[bin_index] += q
+
+    def finalise_analysis(self, save=True, filename="binned_tetrahedral"):
+
+        # x==y
+        mean_q = (self.cum_q_binned[:len(self.bins)]/self.n_bin_entries[:len(self.bins)])
+        np.savetxt(f"{filename}.txt", (self.bins, mean_q))
+
+        plt.plot(self.bins, mean_q)
+        plt.xlabel("Distance from central carbon (Å)")
+        plt.ylabel("Tetrahedral order parameter")
+        plt.tight_layout()
+        plt.savefig(f"{filename}.png")
+        plt.cla()
+        plt.clf()
+
+        print("thanks for playing :+)")
+        
+    def __get_q(self, central_O, nearest_neighbours):
+        
+        vecs = np.array(nearest_neighbours) - central_O
+        
+        pairs = list(zip(vecs, np.roll(vecs, -1)))[:-1]
+        
+        temp_cum = 0
+        
+        for vec1, vec2 in pairs:
+            
+            cos_theta = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
+
+            temp_cum += (cos_theta + 1/3)**2
+        
+        return 1 - (3/8)*temp_cum
+        
+
+            
+        
+        
 
 
 
