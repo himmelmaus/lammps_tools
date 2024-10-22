@@ -646,17 +646,13 @@ class TetrahedralAngleAnalysis(Analysis):
         self.fixed_dims = fixed_dims
         self.dims = None
 
-        
-    def __call__(self, old_atoms, new_atoms, *, dump):
-        
-        if not self.fixed_dims or not self.initialised:
-            self.dims = np.array([
-                                    dump.xbounds[1]-dump.xbounds[0],
-                                    dump.ybounds[1]-dump.ybounds[0],
-                                    dump.zbounds[1]-dump.zbounds[0],
-                                ])
-        
+
+    def initialise(self, new_atoms, dump):
+
         if not self.initialised:
+
+            self.set_dims(dump)
+
             self.O_atoms = np.array(list(filter(lambda a: a.type_id in self.O_types, new_atoms)))
             self.n_Os = len(self.O_atoms)
             # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
@@ -667,18 +663,36 @@ class TetrahedralAngleAnalysis(Analysis):
             # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
             self.C_ids = np.array([c.atom_id for c in self.C_atoms])
             self.initialised = True
+        
+        return True
+
+    def set_dims(self, dump):
+        self.dims = np.array([
+                                    dump.xbounds[1]-dump.xbounds[0],
+                                    dump.ybounds[1]-dump.ybounds[0],
+                                    dump.zbounds[1]-dump.zbounds[0],
+                                ])
+        return self.dims
+      
+        
+    def __call__(self, old_atoms, new_atoms, *, dump):
+        
+        self.initialise(new_atoms, dump)
+
+        if not self.fixed_dims:
+            self.set_dims(dump)
 
         # Step specific stuff
         
         # TODO: write a container object for coordinates (subclassing np.array maybe?)
         # to save needing to do this each time
-        O_coords = np.array([a.coords for a in self.O_atoms])
-        C_coords = np.array([a.coords for a in self.C_atoms])
+        self.O_coords = np.array([a.coords for a in self.O_atoms])
+        self.C_coords = np.array([a.coords for a in self.C_atoms])
 
         for i, central_atom in enumerate(self.O_atoms):
             
             # C_O_distances = np.linalg.norm(C_coords - central_atom.coords, axis=1)
-            C_O_distances = self.__pairwise_distances_pbc(central_atom.coords, C_coords)
+            C_O_distances = self.__pairwise_distances_pbc(central_atom.coords, self.C_coords)
 
             assert len(C_O_distances) == self.n_Cs
 
@@ -688,25 +702,8 @@ class TetrahedralAngleAnalysis(Analysis):
             
             if min_distance > self.C_O_cutoff:
                 continue
-            
-            # Find 4 nearest neighbours
-            # distances = np.linalg.norm(O_coords - central_atom.coords, axis=1)
-            distances = self.__pairwise_distances_pbc(central_atom.coords, O_coords)
-            
-            assert len(distances) == self.n_Os
 
-            # Doing it this way as the lowest difference will always be 0 for i == j
-            nearest_indices = np.argpartition(distances, 5)[:5]
-            # Remove own atom
-            nearest_indices = nearest_indices[nearest_indices != i]
-
-            # half assed inline unit testing, disable with -O flag
-            assert len(nearest_indices) == 4
-            
-            nearest_neighbours = self.O_atoms[nearest_indices]
-            nearest_neighbours_coords = np.array(list(map(lambda x: x.coords, nearest_neighbours)))
-
-            q = self.__get_q(central_atom.coords, nearest_neighbours_coords)
+            q = self.get_q(i)
 
             bin_index = np.floor(min_distance/self.bin_height).astype(int)
 
@@ -756,11 +753,26 @@ class TetrahedralAngleAnalysis(Analysis):
 
         return pbc_vectors
 
+    def get_q(self, central_index):
 
-    def __get_q(self, central_O, nearest_neighbours):
+        central_O_coords = self.O_coords[central_index]
+        distances = self.__pairwise_distances_pbc(central_O_coords, self.O_coords)
+            
+        assert len(distances) == self.n_Os
+
+        # Doing it this way as the lowest difference will always be 0 for i == j
+        nearest_indices = np.argpartition(distances, 5)[:5]
+        # Remove own atom
+        nearest_indices = nearest_indices[nearest_indices != central_index]
+
+        # half assed inline unit testing, disable with -O flag
+        assert len(nearest_indices) == 4
+        
+        nearest_neighbours = self.O_atoms[nearest_indices]
+        nearest_neighbours_coords = np.array(list(map(lambda x: x.coords, nearest_neighbours)))
         
         #vecs = np.array(nearest_neighbours) - central_O
-        vecs = self.__relative_vectors_pbc(central_O, nearest_neighbours)
+        vecs = self.__relative_vectors_pbc(central_O_coords, nearest_neighbours_coords)
         
         # pairs = list(zip(vecs, np.roll(vecs, -1)))[:-1]
         
@@ -778,11 +790,57 @@ class TetrahedralAngleAnalysis(Analysis):
         return 1 - (3/8)*temp_cum
         
 
-            
+class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
+
+    def __init__(self, bin_height=0.01, fixed_bins=True, fixed_dims=True):
+        super().__init__(bin_height, fixed_bins, fixed_dims)
+
+        self.nbins = 1/self.bin_height
+        assert int(self.nbins) == self.nbins
+        self.nbins = int(self.nbins)
+
+        self.bins = np.linspace(0, 1, self.nbins)
+        self.n_bin_entries = np.zeros((self.nbins,))
+
+    def __call__(self, old_atoms, new_atoms, *, dump):
         
+        self.initialise(new_atoms, dump)
+
+        if not self.fixed_dims:
+            self.set_dims(dump)
+
+        # Step specific stuff
         
+        # TODO: write a container object for coordinates (subclassing np.array maybe?)
+        # to save needing to do this each time
+        self.O_coords = np.array([a.coords for a in self.O_atoms])
+        self.C_coords = np.array([a.coords for a in self.C_atoms])
+
+        for i, central_atom in enumerate(self.O_atoms):
+
+            q = self.get_q(i)
+
+            bin_index = np.floor(q/self.bin_height).astype(int)
+
+            self.n_bin_entries[bin_index] += 1
+
+    def finalise_analysis(self, save=True, filename="tetrahedral_distribution"):
 
 
+        np.savetxt(f"{filename}.txt", (self.bins, self.n_bin_entries))
+
+        datestring = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+
+        plt.plot(self.bins, self.n_bin_entries)
+        plt.xlabel("Tetrahedral Angle Order Parameter")
+        plt.ylabel("Relative proportion (arbitrary units)")
+        plt.title(f"Generated at {datestring}")
+        plt.tight_layout()
+        plt.savefig(f"{filename}.png")
+        plt.cla()
+        plt.clf()
+
+        print("thanks for playing :+)")
 
     
         

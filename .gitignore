@@ -7,6 +7,9 @@
 *.lammps
 *.txt
 *.out
+*.dat
+*.zip
+*/test.py
 
 # Everything Below this point is boilerplate
 # Byte-compiled / optimized / DLL files
