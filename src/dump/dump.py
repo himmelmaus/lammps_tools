@@ -58,7 +58,7 @@ class Dump:
             atom_groups[atom_type] = [atom.atom_id for atom in self.atoms if atom.type_id == atom_type]
         file.close()
         
-    def ingest(self, start=0, frame_funcs = [], save_output = True, max_steps = None, skip = None):
+    def ingest(self, start=0, frame_funcs = [], save_output = True, max_steps = None, skip = None, show_step = False):
         """Main function for iterating through the frames of a file and processing based off of that"""
         file = open(self.filename, "r")
         func_outputs = [[] for _ in range(len(frame_funcs))]
@@ -70,7 +70,7 @@ class Dump:
             jump = self.lines_per_frame*(start/self.timestep)
             # Just skips us forward this many lines
             readlines(file, jump)
-            print("hello")
+            # print("hello")
 
         if skip is not None:
             self.skip = skip
@@ -110,8 +110,8 @@ class Dump:
             self.ybounds = list(map(float, atom_lines[6].split(" ")))
             self.zbounds = list(map(float, atom_lines[7].split(" ")))
 
-            print("Timestep: ", self.current_step)
-
+            if show_step:
+                print("Timestep: ", self.current_step)
             
             if len(atom_lines[0]) == 0:
                 break
@@ -126,7 +126,7 @@ class Dump:
             for func in frame_funcs:
                 func(old_atoms, new_atoms, dump=self)
         
-        print(func_outputs)
+        # print(func_outputs)
         return 
             
         

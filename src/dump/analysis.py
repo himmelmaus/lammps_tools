@@ -1,6 +1,7 @@
 from typing import Any
 from itertools import product
 import multiprocessing as mp
+from datetime import datetime
 
 import numpy as np
 from matplotlib import pyplot as plt
@@ -611,12 +612,14 @@ class BinnedDiffusionAnalysis(Analysis):
         
 class TetrahedralAngleAnalysis(Analysis):
     
-    O_type = "OS"
+    O_types = ["OS"]
     C_types = ["CT"]
     C_O_cutoff=17
+    # it's easier to just hardcode them in as they never change
+    __q_indices = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
     
-    def __init__(self, bin_height=0.1, fixed_bins=True, **kwargs):
-        super().__init__(bin_height, fixed_bins, **kwargs)
+    def __init__(self, bin_height=0.1, fixed_bins=True, fixed_dims=True):
+        super().__init__(bin_height, fixed_bins)
         
         self.O_atoms = None
         self.O_ids = None
@@ -640,11 +643,21 @@ class TetrahedralAngleAnalysis(Analysis):
 
         self.bins = np.linspace(0, self.C_O_cutoff, self.nbins+padding)
         
+        self.fixed_dims = fixed_dims
+        self.dims = None
+
+        
     def __call__(self, old_atoms, new_atoms, *, dump):
         
+        if not self.fixed_dims or not self.initialised:
+            self.dims = np.array([
+                                    dump.xbounds[1]-dump.xbounds[0],
+                                    dump.ybounds[1]-dump.ybounds[0],
+                                    dump.zbounds[1]-dump.zbounds[0],
+                                ])
         
         if not self.initialised:
-            self.O_atoms = np.array(list(filter(lambda a: a.type_id==self.O_type, new_atoms)))
+            self.O_atoms = np.array(list(filter(lambda a: a.type_id in self.O_types, new_atoms)))
             self.n_Os = len(self.O_atoms)
             # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
             self.O_ids = np.array([o.atom_id for o in self.O_atoms])
@@ -655,59 +668,47 @@ class TetrahedralAngleAnalysis(Analysis):
             self.C_ids = np.array([c.atom_id for c in self.C_atoms])
             self.initialised = True
 
+        # Step specific stuff
         
-        C_O_distances = np.zeros((self.n_Os, self.n_Cs))
-
-        for i in range(self.n_Cs):
-            C_coords = self.C_atoms[i].coords
-            for j in range(self.n_Os):
-                C_O_distances[j][i] = np.linalg.norm(C_coords - self.O_atoms[j].coords)
-
-        min_C_O_distances = np.min(C_O_distances, axis=1)
-        C_O_filter = min_C_O_distances <= self.C_O_cutoff
-
-        # distances = np.zeros((self.n_Os, self.n_Os))
-        
-        # for i in range(self.n_Os-1):
-
-        #     # Come back to this in order to optimise the calculation, as
-        #     # it would be good to not calculate the O distances for molecules
-        #     # too far away from the carbons - but it complicates the calculation 
-        #     # if not O_filter[i]:
-        #     #     continue
-
-        #     i_coords = self.O_atoms[i].coords
-        #     for j in range(i+1, self.n_Os):
-
-        #         distances[i][j] = np.linalg.norm(i_coords - self.O_atoms[i].coords)
-        
-        # # symmetrise so distances[i][j] = distances[j][i]
-        # distances += distances.T - np.diag(distances.diagonal())
-        
+        # TODO: write a container object for coordinates (subclassing np.array maybe?)
+        # to save needing to do this each time
         O_coords = np.array([a.coords for a in self.O_atoms])
+        C_coords = np.array([a.coords for a in self.C_atoms])
 
         for i, central_atom in enumerate(self.O_atoms):
             
-            # if i == 0:
-            #     # TODO: jank
-            #     continue
+            # C_O_distances = np.linalg.norm(C_coords - central_atom.coords, axis=1)
+            C_O_distances = self.__pairwise_distances_pbc(central_atom.coords, C_coords)
 
-            if not C_O_filter[i]:
+            assert len(C_O_distances) == self.n_Cs
+
+            # This is only relevant for whether to count the atom/what bin it goes in,
+            # so we don't care about which carbon atom it is
+            min_distance = np.min(C_O_distances)
+            
+            if min_distance > self.C_O_cutoff:
                 continue
             
             # Find 4 nearest neighbours
-            distances = np.linalg.norm(O_coords - central_atom.coords, axis=1)
+            # distances = np.linalg.norm(O_coords - central_atom.coords, axis=1)
+            distances = self.__pairwise_distances_pbc(central_atom.coords, O_coords)
+            
+            assert len(distances) == self.n_Os
+
             # Doing it this way as the lowest difference will always be 0 for i == j
             nearest_indices = np.argpartition(distances, 5)[:5]
             # Remove own atom
             nearest_indices = nearest_indices[nearest_indices != i]
+
+            # half assed inline unit testing, disable with -O flag
+            assert len(nearest_indices) == 4
             
             nearest_neighbours = self.O_atoms[nearest_indices]
             nearest_neighbours_coords = np.array(list(map(lambda x: x.coords, nearest_neighbours)))
 
             q = self.__get_q(central_atom.coords, nearest_neighbours_coords)
 
-            bin_index = np.floor(min_C_O_distances[i]/self.bin_height).astype(int)
+            bin_index = np.floor(min_distance/self.bin_height).astype(int)
 
             self.n_bin_entries[bin_index] += 1
             self.cum_q_binned[bin_index] += q
@@ -718,26 +719,58 @@ class TetrahedralAngleAnalysis(Analysis):
         mean_q = (self.cum_q_binned[:len(self.bins)]/self.n_bin_entries[:len(self.bins)])
         np.savetxt(f"{filename}.txt", (self.bins, mean_q))
 
+        datestring = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+
         plt.plot(self.bins, mean_q)
         plt.xlabel("Distance from central carbon (Å)")
         plt.ylabel("Tetrahedral order parameter")
+        plt.title(f"Generated at {datestring}")
         plt.tight_layout()
         plt.savefig(f"{filename}.png")
         plt.cla()
         plt.clf()
 
         print("thanks for playing :+)")
+
+    def __pairwise_distances_pbc(self, central_pos, pos_list):
+
+        # For subtracting the dims in an efficient way with numpy it's easier to 
+        # have things in the same shape, although this makes it a little less efficient
+        tiled_dims = np.tile(self.dims, (len(pos_list), 1))
+
+        # given we're just trying to calculate an absolute distance we don't care about the sign
+        # and only the magnitude. Therefore we can safely ignore that, and only work with the
+        # absolute value
+        relative_vectors = np.abs(pos_list - central_pos)
+        relative_vectors[relative_vectors > self.dims/2] -= tiled_dims[relative_vectors > self.dims/2]
+
+        return np.linalg.norm(relative_vectors, axis=1)
+    
+    def __relative_vectors_pbc(self, central_pos, nearest_neighbours):
         
+        pbc_vectors = nearest_neighbours - central_pos
+        tiled_dims = np.tile(self.dims, (len(nearest_neighbours), 1))
+
+        pbc_vectors[pbc_vectors > self.dims/2] -= tiled_dims[pbc_vectors > self.dims/2]
+        pbc_vectors[pbc_vectors < self.dims/2] += tiled_dims[pbc_vectors < self.dims/2]
+
+        return pbc_vectors
+
+
     def __get_q(self, central_O, nearest_neighbours):
         
-        vecs = np.array(nearest_neighbours) - central_O
+        #vecs = np.array(nearest_neighbours) - central_O
+        vecs = self.__relative_vectors_pbc(central_O, nearest_neighbours)
         
-        pairs = list(zip(vecs, np.roll(vecs, -1)))[:-1]
+        # pairs = list(zip(vecs, np.roll(vecs, -1)))[:-1]
         
         temp_cum = 0
         
-        for vec1, vec2 in pairs:
-            
+        for i, j in self.__q_indices:
+
+            vec1 = vecs[i]
+            vec2 = vecs[j]
+
             cos_theta = np.dot(vec1, vec2) / (np.linalg.norm(vec1) * np.linalg.norm(vec2))
 
             temp_cum += (cos_theta + 1/3)**2
