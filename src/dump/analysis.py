@@ -752,7 +752,7 @@ class TetrahedralAngleAnalysis(Analysis):
         tiled_dims = np.tile(self.dims, (len(nearest_neighbours), 1))
 
         pbc_vectors[pbc_vectors > self.dims/2] -= tiled_dims[pbc_vectors > self.dims/2]
-        pbc_vectors[pbc_vectors < self.dims/2] += tiled_dims[pbc_vectors < self.dims/2]
+        pbc_vectors[pbc_vectors < -self.dims/2] += tiled_dims[pbc_vectors < -self.dims/2]
 
         return pbc_vectors
 
