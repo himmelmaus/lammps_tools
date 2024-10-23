@@ -37,7 +37,13 @@ class Atom:
         else:
             raise ValueError("Atom.line must be either a string or an iterable.")
         
-        if True or self.__atom_style == "atomic":
+        if self.__atom_style.lower() == "cp2k":
+            assert len(tokens) == 4
+            
+            assert tokens[0] == self.type_id
+            self.coords = np.array(list(map(float, tokens[1:])))
+            
+        elif True or self.__atom_style == "atomic":
             assert len(tokens) in [5, 8]
             if len(tokens) == 8:
                 images = tokens[-3:]
@@ -80,8 +86,20 @@ class Atom:
                 atom_style=atom_style,
                 image_flags = images
             )
+        
+        elif atom_style.lower() == "cp2k":
+            
+            assert len(tokens) == 4
+            
+            return cls(
+                # TODO fixmeeeeeeeeeeee, don't know what to do when we don't get given atom IDs
+                0,
+                tokens[0],
+                *map(float, tokens[1:]),
+                atom_style=atom_style
+            )
 
-        if atom_style == "full":
+        elif atom_style == "full":
             assert len(tokens) in [7, 10]
             if len(tokens) == 10:
                 images = tokens[-3:]
