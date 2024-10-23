@@ -190,11 +190,14 @@ class CP2KDump(Dump):
             
         self.n_atoms = int(header_lines[0])
         
-        # temporary hard coding while I fix it up
-        self.xbounds = np.array([0, 15.0])
-        self.ybounds = np.array([0, 15.0])
-        self.zbounds = np.array([0, 15.0])
+        xhi, yhi, zhi = map(float, header_lines[1].split(" "))
+        # Assume low boundary values are the origin, not necessarily true
+        # but doesn't cause a problem for calculating tetrahedral angle
+        # water order parameter
+        self.xbounds = np.array([0, xhi])
+        self.ybounds = np.array([0, yhi])
+        self.zbounds = np.array([0, zhi])
         
     def atom_parser(self, body_line):
         # to allow for DRY code in the CP2K case
-        return Atom.parse_line(body_line, atom_style="CP2K")
+        return Atom.parse_line(body_line, atom_style="cp2k")
