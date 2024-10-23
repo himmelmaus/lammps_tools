@@ -653,12 +653,12 @@ class TetrahedralAngleAnalysis(Analysis):
 
             self.set_dims(dump)
 
-            self.O_atoms = np.array(list(filter(lambda a: a.type_id in self.O_types, new_atoms)))
+            self.O_atoms = np.array(list(filter(lambda a: a.type_id in self.O_types, dump.atoms)))
             self.n_Os = len(self.O_atoms)
             # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
             self.O_ids = np.array([o.atom_id for o in self.O_atoms])
 
-            self.C_atoms = np.array(list(filter(lambda a: a.type_id in self.C_types, new_atoms)))
+            self.C_atoms = np.array(list(filter(lambda a: a.type_id in self.C_types, dump.atoms)))
             self.n_Cs = len(self.C_atoms)
             # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
             self.C_ids = np.array([c.atom_id for c in self.C_atoms])
@@ -808,6 +808,9 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
 
         if not self.fixed_dims:
             self.set_dims(dump)
+            
+        if dump.current_step % 1000000 == 0:
+            self.finalise_analysis(filename=f"tmp_plots/tetrahedral_distribution_{dump.current_step}")
 
         # Step specific stuff
         
