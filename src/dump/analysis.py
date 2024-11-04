@@ -788,11 +788,81 @@ class TetrahedralAngleAnalysis(Analysis):
             temp_cum += (cos_theta + 1/3)**2
         
         return 1 - (3/8)*temp_cum
+    
+
+class TetrahedralSolvationShellAnalysis(TetrahedralAngleAnalysis):
+    
+    C_types = np.array(["CT", "CC", "CT2"])
+    shell_boundaries = np.array([5, 10, 15])
+    
+    def __init__(self, bin_height=0.1, fixed_bins=True, fixed_dims=True):
+        super().__init__(bin_height, fixed_bins, fixed_dims)
+        
+        self.C_O_cutoff = self.shell_boundaries[0]
+        
+        self.shell_cum = np.zeros(self.shell_boundaries.shape)
+        self.shell_n_entries = np.zeros(self.shell_boundaries.shape)
+        
+    def __call__(self, old_atoms, new_atoms, *, dump):
+        
+        self.initialise(new_atoms, dump)
+
+        if not self.fixed_dims:
+            self.set_dims(dump)
+            
+
+        # Step specific stuff
+        
+        # TODO: write a container object for coordinates (subclassing np.array maybe?)
+        # to save needing to do this each time
+        self.O_coords = np.array([a.coords for a in self.O_atoms])
+        self.C_coords = np.array([a.coords for a in self.C_atoms])
+
+        for i, central_atom in enumerate(self.O_atoms):
+            
+            C_O_distances = self.__pairwise_distances_pbc(central_atom.coords, self.C_coords)
+
+            assert len(C_O_distances) == self.n_Cs
+
+            # This is only relevant for whether to count the atom/what bin it goes in,
+            # so we don't care about which carbon atom it is
+            min_distance = np.min(C_O_distances)
+            
+            if min_distance > self.C_O_cutoff:
+                continue
+
+            q = self.get_q(i)
+
+            shell_index = np.where(min_distance <= self.shell_boundaries)[0][0]
+            
+            self.shell_cum[shell_index] += q 
+            self.shell_n_entries[shell_index] += 1
+
+    def finalise_analysis(self, save=True, filename="tetrahedral_distribution"):
+
+        mean_shell_q = self.shell_cum/self.shell_n_entries
+        
+        np.savetxt(f"{filename}.txt", (self.shell_boundaries, np.arange(0, len(self.shell_boundaries)), mean_shell_q))
+
+        datestring = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+
+        print(f"Completed at {datestring}")
+        for i, mean_q, shell_hi in enumerate(zip(mean_shell_q, self.shell_boundaries))):
+            
+            if i == 0:
+                shell_lo = 0
+            else:
+                shell_lo = self.shell_boundaries[i-1]
+            
+            print(f"Solvation shell {i + 1} ({shell_lo} -> {shell_hi} Å) mean q: {mean_q}")
+            
+            
+        print("thanks for playing :+)")
         
 
 class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
 
-    def __init__(self, bin_height=0.01, fixed_bins=True, fixed_dims=True):
+    def __init__(self, bin_height=0.01, fixed_bins=True, fixed_dims=True, outfile=None):
         super().__init__(bin_height, fixed_bins, fixed_dims)
 
         self.nbins = 1/self.bin_height
@@ -801,6 +871,7 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
 
         self.bins = np.linspace(0, 1, self.nbins)
         self.n_bin_entries = np.zeros((self.nbins,))
+        self.outfile=outfile
 
     def __call__(self, old_atoms, new_atoms, *, dump):
         
@@ -809,8 +880,8 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
         if not self.fixed_dims:
             self.set_dims(dump)
             
-        if dump.current_step % 1000000 == 0:
-            self.finalise_analysis(filename=f"tmp_plots/tetrahedral_distribution_{dump.current_step}")
+        if self.outfile is not None and dump.current_step % 2000000 == 0:
+            self.finalise_analysis(filename=self.outfile)
 
         # Step specific stuff
         
@@ -844,6 +915,3 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
         plt.clf()
 
         print("thanks for playing :+)")
-
-    
-        
