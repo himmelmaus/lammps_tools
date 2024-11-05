@@ -847,7 +847,7 @@ class TetrahedralSolvationShellAnalysis(TetrahedralAngleAnalysis):
         datestring = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
 
         print(f"Completed at {datestring}")
-        for i, mean_q, shell_hi in enumerate(zip(mean_shell_q, self.shell_boundaries))):
+        for i, mean_q, shell_hi in enumerate(zip(mean_shell_q, self.shell_boundaries)):
             
             if i == 0:
                 shell_lo = 0
@@ -915,3 +915,10 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
         plt.clf()
 
         print("thanks for playing :+)")
+
+# scp -r "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/spce/spce_5ae59/traj/merged_prod.xyz" zemos_traj/spce/spce_5ae59.xyz
+#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/tip3p/tip3p_9d46c/traj/merged_prod.xyz" zemos_traj/tip3p/tip3p_9d46c.xyz
+#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/pure_spce/pure_spce_29586/traj/merged_prod.xyz" zemos_traj/pure_spce/pure_spce_29586.xyz
+#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/pure_tip3p/pure_tip3p_34d3d/traj/merged_prod.xyz" zemos_traj/pure_tip3p/pure_tip3p_34d3d.xyz
+#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/nacl_spce/nacl_spce_0082e/traj/merged_prod.xyz" zemos_traj/nacl_spce/nacl_spce_0082e.xyz
+#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/nacl_tip3p/nacl_tip3p_44eb3/traj/merged_prod.xyz" zemos_traj/nacl_tip3p/nacl_tip3p_44eb3.xyz
