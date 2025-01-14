@@ -613,12 +613,12 @@ class BinnedDiffusionAnalysis(Analysis):
 class TetrahedralAngleAnalysis(Analysis):
     
     O_types = ["OS"]
-    C_types = ["CT"]
-    C_O_cutoff=17
+    C_types = ["CC"]
+    C_O_cutoff=13
     # it's easier to just hardcode them in as they never change
     __q_indices = [(0, 1), (0, 2), (0, 3), (1, 2), (1, 3), (2, 3)]
     
-    def __init__(self, bin_height=0.1, fixed_bins=True, fixed_dims=True):
+    def __init__(self, bin_height=0.1, fixed_bins=True, fixed_dims=True, outfile=None):
         super().__init__(bin_height, fixed_bins)
         
         self.O_atoms = None
@@ -641,6 +641,11 @@ class TetrahedralAngleAnalysis(Analysis):
         self.cum_q_binned = np.zeros((self.nbins+padding,))
         self.n_bin_entries  = np.zeros((self.nbins+padding,))
 
+        if outfile is not None:
+            self.outfile = outfile
+        else:
+            self.outfile = None
+
         self.bins = np.linspace(0, self.C_O_cutoff, self.nbins+padding)
         
         self.fixed_dims = fixed_dims
@@ -654,6 +659,8 @@ class TetrahedralAngleAnalysis(Analysis):
             self.set_dims(dump)
 
             self.O_atoms = np.array(list(filter(lambda a: a.type_id in self.O_types, dump.atoms)))
+            # Temporary hard coding so that we only consider water oxygens as centres
+            self.O_centres = np.array(list(filter(lambda a: a.type_id == "OS", dump.atoms)))
             self.n_Os = len(self.O_atoms)
             # self.O_atoms = {o.atom_id : o for o in self.O_atoms}
             self.O_ids = np.array([o.atom_id for o in self.O_atoms])
@@ -682,6 +689,9 @@ class TetrahedralAngleAnalysis(Analysis):
         if not self.fixed_dims:
             self.set_dims(dump)
 
+        if self.outfile is not None and dump.current_step % 7000 == 0:
+            self.finalise_analysis(filename=self.outfile)
+
         # Step specific stuff
         
         # TODO: write a container object for coordinates (subclassing np.array maybe?)
@@ -690,9 +700,13 @@ class TetrahedralAngleAnalysis(Analysis):
         self.C_coords = np.array([a.coords for a in self.C_atoms])
 
         for i, central_atom in enumerate(self.O_atoms):
+            # print(self.O_coords[i], self.C_coords)
+            # Temporary hard coding for the case of includng carboxylate oxygens in q
+            if central_atom.type_id != "OS":
+                continue
             
             # C_O_distances = np.linalg.norm(C_coords - central_atom.coords, axis=1)
-            C_O_distances = self.__pairwise_distances_pbc(central_atom.coords, self.C_coords)
+            C_O_distances = self.pairwise_distances_pbc(self.O_coords[i], self.C_coords)
 
             assert len(C_O_distances) == self.n_Cs
 
@@ -715,6 +729,7 @@ class TetrahedralAngleAnalysis(Analysis):
         # x==y
         mean_q = (self.cum_q_binned[:len(self.bins)]/self.n_bin_entries[:len(self.bins)])
         np.savetxt(f"{filename}.txt", (self.bins, mean_q))
+        np.savetxt(f"{filename}_raw.txt", (self.bins, self.cum_q_binned[:len(self.bins)], self.n_bin_entries[:len(self.bins)]))
 
         datestring = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
 
@@ -727,9 +742,9 @@ class TetrahedralAngleAnalysis(Analysis):
         plt.cla()
         plt.clf()
 
-        print("thanks for playing :+)")
+        print(f"({filename}, radial) thanks for playing :+)")
 
-    def __pairwise_distances_pbc(self, central_pos, pos_list):
+    def pairwise_distances_pbc(self, central_pos, pos_list):
 
         # For subtracting the dims in an efficient way with numpy it's easier to 
         # have things in the same shape, although this makes it a little less efficient
@@ -756,7 +771,7 @@ class TetrahedralAngleAnalysis(Analysis):
     def get_q(self, central_index):
 
         central_O_coords = self.O_coords[central_index]
-        distances = self.__pairwise_distances_pbc(central_O_coords, self.O_coords)
+        distances = self.pairwise_distances_pbc(central_O_coords, self.O_coords)
             
         assert len(distances) == self.n_Os
 
@@ -820,7 +835,7 @@ class TetrahedralSolvationShellAnalysis(TetrahedralAngleAnalysis):
 
         for i, central_atom in enumerate(self.O_atoms):
             
-            C_O_distances = self.__pairwise_distances_pbc(central_atom.coords, self.C_coords)
+            C_O_distances = self.pairwise_distances_pbc(central_atom.coords, self.C_coords)
 
             assert len(C_O_distances) == self.n_Cs
 
@@ -880,7 +895,7 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
         if not self.fixed_dims:
             self.set_dims(dump)
             
-        if self.outfile is not None and dump.current_step % 2000000 == 0:
+        if self.outfile is not None and dump.current_step % 7000 == 0:
             self.finalise_analysis(filename=self.outfile)
 
         # Step specific stuff
@@ -893,6 +908,9 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
         for i, central_atom in enumerate(self.O_atoms):
 
             q = self.get_q(i)
+
+            if q < 0 or q > 1:
+                continue
 
             bin_index = np.floor(q/self.bin_height).astype(int)
 
@@ -914,11 +932,93 @@ class TetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
         plt.cla()
         plt.clf()
 
-        print("thanks for playing :+)")
+        print(f"({filename}, distro) thanks for playing :+)")
 
-# scp -r "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/spce/spce_5ae59/traj/merged_prod.xyz" zemos_traj/spce/spce_5ae59.xyz
-#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/tip3p/tip3p_9d46c/traj/merged_prod.xyz" zemos_traj/tip3p/tip3p_9d46c.xyz
-#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/pure_spce/pure_spce_29586/traj/merged_prod.xyz" zemos_traj/pure_spce/pure_spce_29586.xyz
-#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/pure_tip3p/pure_tip3p_34d3d/traj/merged_prod.xyz" zemos_traj/pure_tip3p/pure_tip3p_34d3d.xyz
-#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/nacl_spce/nacl_spce_0082e/traj/merged_prod.xyz" zemos_traj/nacl_spce/nacl_spce_0082e.xyz
-#         "esmith@dyshent.zemos.rub.de:/data/esmith/water_models/nacl_tip3p/nacl_tip3p_44eb3/traj/merged_prod.xyz" zemos_traj/nacl_tip3p/nacl_tip3p_44eb3.xyz
+
+class SpatialTetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
+
+
+    def __init__(self, bin_height=0.01, fixed_bins=True, fixed_dims=True, outfile=None, threshold=10):
+        super().__init__(bin_height, fixed_bins, fixed_dims)
+
+        self.nbins = 1/self.bin_height
+        assert int(self.nbins) == self.nbins
+        self.nbins = int(self.nbins)
+
+        self.bins = np.linspace(0, 1, self.nbins)
+        self.n_bin_entries_in = np.zeros((self.nbins,))
+        self.n_bin_entries_out = np.zeros((self.nbins,))
+        self.outfile=outfile
+        # Decides whether we want to look at values either inside or outside of the threshold
+
+        self.threshold = threshold
+
+    def initialise(self, new_atoms, dump):
+        super().initialise(new_atoms, dump)
+        self.Au_atoms = np.array(list(filter(lambda a: a.type_id == "Au", dump.atoms)))
+
+    def __call__(self, old_atoms, new_atoms, *, dump):
+        
+        self.initialise(new_atoms, dump)
+
+        if not self.fixed_dims:
+            self.set_dims(dump)
+        
+        if self.outfile is not None and dump.current_step % 6000 == 0:
+            self.finalise_analysis(filename=self.outfile)
+
+        # Step specific stuff
+        
+        # TODO: write a container object for coordinates (subclassing np.array maybe?)
+        # to save needing to do this each time
+        self.O_coords = np.array([a.coords for a in self.O_atoms])
+        self.Au_coords = np.array([a.coords for a in self.Au_atoms])
+        # self.C_coords = np.array([a.coords for a in self.C_atoms])
+
+
+        for i, central_atom in enumerate(self.O_atoms):
+
+            distance = np.min(self.pairwise_distances_pbc(self.O_coords[i], self.Au_coords))
+
+            q = self.get_q(i)
+
+            if q < 0 or q > 1:
+                continue
+
+            bin_index = np.floor(q/self.bin_height).astype(int)
+
+            if distance <= self.threshold:
+                self.n_bin_entries_in[bin_index] += 1
+            else:
+                self.n_bin_entries_out[bin_index] += 1
+
+    def finalise_analysis(self, save=True, filename="tetrahedral_distribution_spatial"):
+
+
+        np.savetxt(f"{filename}_in_{self.threshold}.txt", (self.bins, self.n_bin_entries_in))
+        np.savetxt(f"{filename}_out_{self.threshold}.txt", (self.bins, self.n_bin_entries_out))
+
+        datestring = datetime.now().strftime("%Y-%m-%d, %H:%M:%S")
+
+        plt.plot(self.bins, self.n_bin_entries_in)
+        plt.xlabel("Tetrahedral Angle Order Parameter")
+        plt.ylabel("Relative proportion (arbitrary units)")
+        plt.title(f"Generated at {datestring}")
+        plt.tight_layout()
+        plt.savefig(f"{filename}_in_{self.threshold}.png")
+        plt.cla()
+        plt.clf()
+
+        plt.plot(self.bins, self.n_bin_entries_out)
+        plt.xlabel("Tetrahedral Angle Order Parameter")
+        plt.ylabel("Relative proportion (arbitrary units)")
+        plt.title(f"Generated at {datestring}")
+        plt.tight_layout()
+        plt.savefig(f"{filename}_out_{self.threshold}.png")
+        plt.cla()
+        plt.clf()
+
+        print(f"({filename}, distro) thanks for playing :+)")
+
+
+class HydrogenBondAnalysis(Analysis):
