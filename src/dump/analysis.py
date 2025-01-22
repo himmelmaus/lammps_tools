@@ -45,6 +45,14 @@ class Analysis:
         print(dump.current_step, dump.n_atoms, np.mean(angles), max(angles))
         return np.mean(angles)
     
+    def set_dims(self, dump):
+        self.dims = np.array([
+                                    dump.xbounds[1]-dump.xbounds[0],
+                                    dump.ybounds[1]-dump.ybounds[0],
+                                    dump.zbounds[1]-dump.zbounds[0],
+                                ])
+        return self.dims
+    
     def set_mol_atoms(self, dump):
         self.mol_atoms = {}
         O_H_atoms = [a.atom_id for a in dump.atoms if a.type_id in ["O", "H"]]
@@ -88,6 +96,34 @@ class Analysis:
             bin_index = int(np.floor(coords[2]/self.bin_height))
 
         return bin_index
+    
+    def pairwise_distances_pbc(self, central_pos, pos_list):
+
+        # For subtracting the dims in an efficient way with numpy it's easier to 
+        # have things in the same shape, although this makes it a little less efficient
+        tiled_dims = np.tile(self.dims, (len(pos_list), 1))
+
+        # given we're just trying to calculate an absolute distance we don't care about the sign
+        # and only the magnitude. Therefore we can safely ignore that, and only work with the
+        # absolute value
+        relative_vectors = np.abs(pos_list - central_pos)
+        relative_vectors[relative_vectors > self.dims/2] -= tiled_dims[relative_vectors > self.dims/2]
+
+        return np.linalg.norm(relative_vectors, axis=1)
+
+
+    def relative_vectors_pbc(self, central_pos, nearest_neighbours):
+        
+        pbc_vectors = nearest_neighbours - central_pos
+        
+        pbc_vectors -= self.dims*np.round(pbc_vectors/self.dims)
+        
+        # tiled_dims = np.tile(self.dims, (len(nearest_neighbours), 1))
+
+        # pbc_vectors[pbc_vectors > self.dims/2] -= tiled_dims[pbc_vectors > self.dims/2]
+        # pbc_vectors[pbc_vectors < -self.dims/2] += tiled_dims[pbc_vectors < -self.dims/2]
+
+        return pbc_vectors
     
 class BinnedAngleAnalysis(Analysis):
 
@@ -672,14 +708,6 @@ class TetrahedralAngleAnalysis(Analysis):
             self.initialised = True
         
         return True
-
-    def set_dims(self, dump):
-        self.dims = np.array([
-                                    dump.xbounds[1]-dump.xbounds[0],
-                                    dump.ybounds[1]-dump.ybounds[0],
-                                    dump.zbounds[1]-dump.zbounds[0],
-                                ])
-        return self.dims
       
         
     def __call__(self, old_atoms, new_atoms, *, dump):
@@ -744,30 +772,6 @@ class TetrahedralAngleAnalysis(Analysis):
 
         print(f"({filename}, radial) thanks for playing :+)")
 
-    def pairwise_distances_pbc(self, central_pos, pos_list):
-
-        # For subtracting the dims in an efficient way with numpy it's easier to 
-        # have things in the same shape, although this makes it a little less efficient
-        tiled_dims = np.tile(self.dims, (len(pos_list), 1))
-
-        # given we're just trying to calculate an absolute distance we don't care about the sign
-        # and only the magnitude. Therefore we can safely ignore that, and only work with the
-        # absolute value
-        relative_vectors = np.abs(pos_list - central_pos)
-        relative_vectors[relative_vectors > self.dims/2] -= tiled_dims[relative_vectors > self.dims/2]
-
-        return np.linalg.norm(relative_vectors, axis=1)
-    
-    def __relative_vectors_pbc(self, central_pos, nearest_neighbours):
-        
-        pbc_vectors = nearest_neighbours - central_pos
-        tiled_dims = np.tile(self.dims, (len(nearest_neighbours), 1))
-
-        pbc_vectors[pbc_vectors > self.dims/2] -= tiled_dims[pbc_vectors > self.dims/2]
-        pbc_vectors[pbc_vectors < -self.dims/2] += tiled_dims[pbc_vectors < -self.dims/2]
-
-        return pbc_vectors
-
     def get_q(self, central_index):
 
         central_O_coords = self.O_coords[central_index]
@@ -787,7 +791,7 @@ class TetrahedralAngleAnalysis(Analysis):
         nearest_neighbours_coords = np.array(list(map(lambda x: x.coords, nearest_neighbours)))
         
         #vecs = np.array(nearest_neighbours) - central_O
-        vecs = self.__relative_vectors_pbc(central_O_coords, nearest_neighbours_coords)
+        vecs = self.relative_vectors_pbc(central_O_coords, nearest_neighbours_coords)
         
         # pairs = list(zip(vecs, np.roll(vecs, -1)))[:-1]
         
@@ -1022,3 +1026,87 @@ class SpatialTetrahedralDistributionAnalysis(TetrahedralAngleAnalysis):
 
 
 class HydrogenBondAnalysis(Analysis):
+
+    hbond_cutoff = 3
+    hbond_angle = 160
+
+    H_types = ["H"]
+    O_types = ["OS", "OC"]
+
+    H_atoms = []
+    O_atoms = []
+
+
+    def __init__(self, *args, **kwargs):
+        return super().__init__(self, *args, **kwargs)
+    
+    def __call__(self, old_atoms, new_atoms, *, dump):
+        
+        # There must be a nicer way to do tthis lmao
+        # TODO: aaaaaaaaaaaaaaaaaa
+        
+        self.H_coords = np.array(list(map(lambda a: a.coords, self.H_atoms)))
+        self.O_coords = np.array(list(map(lambda a: a.coords, self.O_atoms)))
+        
+        self.distances = np.zeros((self.n_Hs, self.n_Os))
+        self.rel_vecs = np.zeros((self.n_Hs, self.n_Os, 3))
+        
+        for i, H_coord in enumerate(self.H_coords):
+            
+            rel_vecs = self.relative_vectors_pbc(H_coord, self.O_coords)
+            rel_dists = np.linalg.norm(rel_vecs, axis=-1)
+            
+            self.distances[i,:] = rel_dists
+            self.rel_vecs[i,:] = rel_vecs
+        
+        # Find which hydrogens to consider for H bond calculation
+        cutoff_mask = (self.distances < self.hbond_cutoff) & (self.H_O_mask)
+        
+        bonded_rel_vectors = rel_vecs[np.arange(0, self.n_Hs), self.H_O_ids]
+        
+        H_bonded = np.zeros((self.n_Hs,))
+        
+        for H_i, O_j in np.where(cutoff_mask):
+            
+            if self.get_angle(rel_vecs[H_i, O_j], bonded_rel_vectors[H_i]) > np.pi*(8/9):
+                
+                H_bonded[H_i] = True
+                
+    
+    def initialise(self, new_atoms, dump):
+        
+        self.set_dims(dump)
+        
+        self.O_atoms = np.array(list(filter(lambda a: a.type_id in self.O_types, dump.atoms)))
+        self.O_coords = np.array(list(map(lambda a: a.coords, self.O_atoms)))
+        # Temporary hard coding so that we only consider water oxygens as centres
+        self.O_centres = np.array(list(filter(lambda a: a.type_id == "OS", dump.atoms)))
+        self.n_Os = len(self.O_atoms)
+
+        self.H_atoms = np.array(list(filter(lambda a: a.type_id in self.H_types, dump.atoms)))
+        self.H_coords = np.array(list(map(lambda a: a.coords, self.H_atoms)))
+        
+        # Temporary hard coding so that we only consider water oxygens as centres
+        self.H_centres = np.array(list(filter(lambda a: a.type_id == "HS", dump.atoms)))
+        self.n_Hs = len(self.H_atoms)
+
+        self.H_O_matrix = np.reshape(list(product(self.H_atoms, self.O_atoms)), (self.n_Hs, self.n_Os, 2))
+        
+        
+        # Pre compute a mask to always exclude bonded atoms and a list of size (n_Hs,) with the ID of the corresponding oxygen atom
+        H_mol_ids = list(map(lambda x: x.molecule_id), self.H_atoms)
+        O_mol_ids = list(map(lambda x: x.molecule_id), self.O_atoms)
+        
+        # the index of a hydrogen's corresponding oxygen
+        self.H_O_ids = np.array([np.where(h == O_mol_ids) for h in H_mol_ids])
+        self.H_O_mask = np.zeros((self.n_Hs, self.n_Os)) == 0
+        
+        for H_id, O_id in self.H_O_ids:
+            self.H_O_mask[H_id, O_id] = False
+            
+
+    def get_angle(vec1, vec2):
+        return np.cos(np.dot(vec1, vec2)/(np.linalg.norm(vec1)*np.linalg.norm(vec2)))
+        
+        
+
